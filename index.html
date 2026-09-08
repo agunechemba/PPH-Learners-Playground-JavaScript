@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JS Console · PPH Playground</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <header>
+        <h1>🟨 JS Console · PPH Playground</h1>
+        <div class="controls">
+            <button id="runBtn">▶ Run</button>
+            <button id="downloadBtn">⬇ Download</button>
+            <button id="resetBtn">↺ Reset</button>
+            <button id="themeToggleBtn" title="Toggle theme">🌓</button>
+        </div>
+    </header>
+
+    <main>
+        <section class="editor-section">
+            <div class="tab-bar">
+                <button class="tab-btn active">JavaScript</button>
+            </div>
+            <div class="editor-wrapper">
+                <div id="lineNumbers"></div>
+                <div class="code-area">
+                    <div id="highlighting"></div>
+                    <textarea id="editor" spellcheck="false">// Welcome to the JS Console Playground!
+console.log("👋 Hello from JavaScript!");
+const name = "PPH learner";
+console.log(`Welcome, ${name}!`);
+
+// Try some JavaScript
+const numbers = [1, 2, 3, 4, 5];
+const doubled = numbers.map(n => n * 2);
+console.log("Doubled:", doubled);
+
+// You can even use async/await
+(async () => {
+    const result = await Promise.resolve("✨ Async works!");
+    console.log(result);
+})();</textarea>
+                </div>
+            </div>
+        </section>
+
+        <section class="preview-section">
+            <div class="preview-header">
+                <span>⏎ Console output</span>
+                <span class="output-status" id="statusText">idle</span>
+            </div>
+            <div id="outputBox">› ready · press Run or Ctrl+Enter</div>
+        </section>
+    </main>
+
+    <footer>
+        <span>Built by <a href="https://agunechemba.name.ng/">Agunechemba Ekene</a> · JS Console</span>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
