@@ -12,7 +12,7 @@
     const themeToggleBtn = document.getElementById('themeToggleBtn');
     const statusText = document.getElementById('statusText');
 
-    // ----- THEME SWITCHING (same as before) -----
+    // ----- THEME SWITCHING -----
     function getSystemTheme() {
         return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     }
@@ -78,10 +78,10 @@
     // ----- Syntax highlighting (JavaScript flavored) -----
     function updateHighlighting() {
         const code = editor.value;
+        // Escape only & and < — > does NOT need escaping in HTML text content
         let escaped = code
             .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
+            .replace(/</g, '&lt;');
 
         let result = '';
         let i = 0;
@@ -89,17 +89,18 @@
 
         while (i < len) {
             // Comments: single line // or multi-line /* ... */
-            if (escaped[i] === '/' && i + 1 < len && escaped[i+1] === '/') {
+            if (escaped[i] === '/' && i + 1 < len && escaped[i + 1] === '/') {
                 let start = i;
                 while (i < len && escaped[i] !== '\n') i++;
                 result += '<span class="token comment">' + escaped.substring(start, i) + '</span>';
                 continue;
             }
-            if (escaped[i] === '/' && i + 1 < len && escaped[i+1] === '*') {
+            if (escaped[i] === '/' && i + 1 < len && escaped[i + 1] === '*') {
                 let start = i;
                 i += 2;
-                while (i + 1 < len && !(escaped[i] === '*' && escaped[i+1] === '/')) i++;
+                while (i + 1 < len && !(escaped[i] === '*' && escaped[i + 1] === '/')) i++;
                 i += 2;
+                if (i > len) i = len;
                 result += '<span class="token comment">' + escaped.substring(start, i) + '</span>';
                 continue;
             }
@@ -195,6 +196,7 @@
     }
     function appendOutput(text, className = '') {
         const div = document.createElement('div');
+        // textContent safely renders >, <, &, etc. as literal text
         div.textContent = text;
         if (className) div.className = className;
         outputBox.appendChild(div);
@@ -211,12 +213,39 @@
         statusText.textContent = text;
     }
 
+    // ----- Safe stringify -----
+    function safeStringify(value) {
+        if (value === undefined) return 'undefined';
+        if (value === null) return 'null';
+        if (typeof value === 'function') return value.toString();
+        if (typeof value === 'symbol') return value.toString();
+        if (typeof value === 'bigint') return value.toString() + 'n';
+        if (typeof value === 'object') {
+            try {
+                const seen = new WeakSet();
+                return JSON.stringify(value, function(key, val) {
+                    if (typeof val === 'object' && val !== null) {
+                        if (seen.has(val)) return '[Circular]';
+                        seen.add(val);
+                    }
+                    return val;
+                }, 2);
+            } catch (e) {
+                try {
+                    return String(value);
+                } catch (e2) {
+                    return '[Unserializable]';
+                }
+            }
+        }
+        return String(value);
+    }
+
     // ----- Run JavaScript -----
     function runJavaScript(code) {
         clearOutput();
         setStatus('running…');
 
-        // Capture console.log, console.error, etc.
         const originalLog = console.log;
         const originalError = console.error;
         const originalWarn = console.warn;
@@ -226,9 +255,7 @@
         const logs = [];
 
         function capture(method, args) {
-            const msg = args.map(arg =>
-                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-            ).join(' ');
+            const msg = args.map(arg => safeStringify(arg)).join(' ');
             logs.push({ method, msg });
         }
 
@@ -238,12 +265,27 @@
         console.info = (...args) => { capture('info', args); originalInfo(...args); };
         console.debug = (...args) => { capture('debug', args); originalDebug(...args); };
 
+        function restoreConsoles() {
+            console.log = originalLog;
+            console.error = originalError;
+            console.warn = originalWarn;
+            console.info = originalInfo;
+            console.debug = originalDebug;
+        }
+
+        function flushLogs() {
+            logs.forEach(({ method, msg }) => {
+                const cls = method === 'error' ? 'error' : '';
+                appendOutput(msg, cls);
+            });
+        }
+
         let result = null;
         let error = null;
 
         try {
             // Use async Function to support top-level await
-            const asyncFn = new Function('return (async () => { ' + code + ' })();');
+            const asyncFn = new Function('return (async () => { ' + code + '\n})();');
             result = asyncFn();
         } catch (e) {
             error = e;
@@ -252,14 +294,8 @@
         // Handle async result or sync error
         if (error) {
             restoreConsoles();
-            const errMsg = error.message || String(error);
-            if (logs.length) {
-                logs.forEach(({ method, msg }) => {
-                    const cls = method === 'error' ? 'error' : '';
-                    appendOutput(msg, cls);
-                });
-            }
-            setOutputError('JS Error: ' + errMsg);
+            flushLogs();
+            setOutputError('JS Error: ' + (error && error.message ? error.message : String(error)));
             setStatus('error');
             return;
         }
@@ -269,13 +305,9 @@
             result
                 .then((val) => {
                     restoreConsoles();
-                    // show any captured logs
-                    logs.forEach(({ method, msg }) => {
-                        const cls = method === 'error' ? 'error' : '';
-                        appendOutput(msg, cls);
-                    });
+                    flushLogs();
                     if (val !== undefined) {
-                        appendOutput('→ ' + JSON.stringify(val, null, 2), 'success');
+                        appendOutput('→ ' + safeStringify(val), 'success');
                     }
                     if (logs.length === 0 && val === undefined) {
                         appendOutput('(no output)', 'dim');
@@ -284,35 +316,21 @@
                 })
                 .catch((err) => {
                     restoreConsoles();
-                    logs.forEach(({ method, msg }) => {
-                        const cls = method === 'error' ? 'error' : '';
-                        appendOutput(msg, cls);
-                    });
-                    setOutputError('JS Error: ' + (err.message || String(err)));
+                    flushLogs();
+                    setOutputError('JS Error: ' + (err && err.message ? err.message : String(err)));
                     setStatus('error');
                 });
         } else {
             // Sync result
             restoreConsoles();
-            logs.forEach(({ method, msg }) => {
-                const cls = method === 'error' ? 'error' : '';
-                appendOutput(msg, cls);
-            });
+            flushLogs();
             if (result !== undefined && result !== null) {
-                appendOutput('→ ' + JSON.stringify(result, null, 2), 'success');
+                appendOutput('→ ' + safeStringify(result), 'success');
             }
             if (logs.length === 0 && result === undefined) {
                 appendOutput('(no output)', 'dim');
             }
             setStatus('ready');
-        }
-
-        function restoreConsoles() {
-            console.log = originalLog;
-            console.error = originalError;
-            console.warn = originalWarn;
-            console.info = originalInfo;
-            console.debug = originalDebug;
         }
     }
 
@@ -324,23 +342,27 @@
     // ----- Reset Example (JS flavor) -----
     function resetExample() {
         const example = `// Welcome to the JavaScript Console Playground!
-        console.log("👋 Hello from JavaScript!");
-        
-        // Variables and types
-        const name = "PPH learner";
-        console.log(\`Welcome, \${name}!\`);
-        
-        // Arrays and methods
-        const numbers = [1, 2, 3, 4, 5];
-        const doubled = numbers.map(n => n * 2);
-        console.log("Doubled:", doubled);
-        
-        // Async / await works too!
-        (async () => {
-            const result = await Promise.resolve("✨ Async works!");
-            console.log(result);
-            return "done";
-        })();`;
+console.log("👋 Hello from JavaScript!");
+
+// Variables and types
+const name = "PPH learner";
+console.log(\`Welcome, \${name}!\`);
+
+// Arrays and methods
+const numbers = [1, 2, 3, 4, 5];
+const doubled = numbers.map(n => n * 2);
+console.log("Doubled:", doubled);
+
+// Comparison operators work fine
+const isGreater = 5 > 3;
+console.log("5 > 3 is", isGreater);
+
+// Async / await works too!
+(async () => {
+    const result = await Promise.resolve("✨ Async works!");
+    console.log(result);
+    return "done";
+})();`;
         editor.value = example;
         syncEditor();
         clearOutput();
@@ -372,6 +394,15 @@
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
             e.preventDefault();
             handleRun();
+        }
+        // Tab key inserts 2 spaces instead of moving focus
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const start = editor.selectionStart;
+            const end = editor.selectionEnd;
+            editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
+            editor.selectionStart = editor.selectionEnd = start + 2;
+            syncEditor();
         }
     });
 
