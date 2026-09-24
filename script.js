@@ -75,63 +75,67 @@
         lineNumbers.textContent = nums;
     }
 
+    // ----- HTML escape helper -----
+    function escapeHtml(str) {
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
     // ----- Syntax highlighting (JavaScript flavored) -----
     function updateHighlighting() {
         const code = editor.value;
-        // Escape only & and < — > does NOT need escaping in HTML text content
-        let escaped = code
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;');
-
         let result = '';
         let i = 0;
-        const len = escaped.length;
+        const len = code.length;
 
         while (i < len) {
-            // Comments: single line // or multi-line /* ... */
-            if (escaped[i] === '/' && i + 1 < len && escaped[i + 1] === '/') {
+            // Comments: single line //
+            if (code[i] === '/' && i + 1 < len && code[i + 1] === '/') {
                 let start = i;
-                while (i < len && escaped[i] !== '\n') i++;
-                result += '<span class="token comment">' + escaped.substring(start, i) + '</span>';
+                while (i < len && code[i] !== '\n') i++;
+                result += '<span class="token comment">' + escapeHtml(code.substring(start, i)) + '</span>';
                 continue;
             }
-            if (escaped[i] === '/' && i + 1 < len && escaped[i + 1] === '*') {
+            // Multi-line comments /* ... */
+            if (code[i] === '/' && i + 1 < len && code[i + 1] === '*') {
                 let start = i;
                 i += 2;
-                while (i + 1 < len && !(escaped[i] === '*' && escaped[i + 1] === '/')) i++;
+                while (i + 1 < len && !(code[i] === '*' && code[i + 1] === '/')) i++;
                 i += 2;
                 if (i > len) i = len;
-                result += '<span class="token comment">' + escaped.substring(start, i) + '</span>';
+                result += '<span class="token comment">' + escapeHtml(code.substring(start, i)) + '</span>';
                 continue;
             }
 
             // Strings (double, single, template)
-            if (escaped[i] === '"' || escaped[i] === "'" || escaped[i] === '`') {
+            if (code[i] === '"' || code[i] === "'" || code[i] === '`') {
                 let start = i;
-                let quote = escaped[i];
+                let quote = code[i];
                 i++;
-                while (i < len && escaped[i] !== quote) {
-                    if (escaped[i] === '\\' && i + 1 < len) i += 2;
+                while (i < len && code[i] !== quote) {
+                    if (code[i] === '\\' && i + 1 < len) i += 2;
                     else i++;
                 }
-                if (i < len && escaped[i] === quote) i++;
-                result += '<span class="token string">' + escaped.substring(start, i) + '</span>';
+                if (i < len && code[i] === quote) i++;
+                result += '<span class="token string">' + escapeHtml(code.substring(start, i)) + '</span>';
                 continue;
             }
 
             // Numbers
-            if (/[0-9]/.test(escaped[i])) {
+            if (/[0-9]/.test(code[i])) {
                 let start = i;
-                while (i < len && /[0-9.]/.test(escaped[i])) i++;
-                result += '<span class="token number">' + escaped.substring(start, i) + '</span>';
+                while (i < len && /[0-9.]/.test(code[i])) i++;
+                result += '<span class="token number">' + escapeHtml(code.substring(start, i)) + '</span>';
                 continue;
             }
 
-            // Identifiers / keywords
-            if (/[a-zA-Z_]/.test(escaped[i])) {
+            // Identifiers / keywords / builtins
+            if (/[a-zA-Z_$]/.test(code[i])) {
                 let start = i;
-                while (i < len && /[a-zA-Z0-9_]/.test(escaped[i])) i++;
-                let word = escaped.substring(start, i);
+                while (i < len && /[a-zA-Z0-9_$]/.test(code[i])) i++;
+                let word = code.substring(start, i);
                 const keywords = [
                     'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
                     'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'function',
@@ -146,32 +150,36 @@
                     'JSON', 'parse', 'stringify', 'Math', 'Date', 'RegExp',
                     'Map', 'Set', 'WeakMap', 'WeakSet', 'Symbol', 'Proxy', 'Reflect'
                 ];
+                const literals = ['true', 'false', 'null', 'undefined', 'NaN', 'Infinity'];
                 if (keywords.includes(word)) {
-                    result += '<span class="token keyword">' + word + '</span>';
+                    result += '<span class="token keyword">' + escapeHtml(word) + '</span>';
+                } else if (literals.includes(word)) {
+                    result += '<span class="token boolean">' + escapeHtml(word) + '</span>';
                 } else if (builtins.includes(word)) {
-                    result += '<span class="token function">' + word + '</span>';
+                    result += '<span class="token function">' + escapeHtml(word) + '</span>';
                 } else {
-                    result += word;
+                    result += escapeHtml(word);
                 }
                 continue;
             }
 
-            // Operators
-            if (/[+\-*/%=<>!&|^~]/.test(escaped[i])) {
+            // Operators — note: & and | and < and > are handled here
+            if (/[+\-*/%=<>!&|^~?]/.test(code[i])) {
                 let start = i;
-                while (i < len && /[+\-*/%=<>!&|^~]/.test(escaped[i])) i++;
-                result += '<span class="token operator">' + escaped.substring(start, i) + '</span>';
+                while (i < len && /[+\-*/%=<>!&|^~?]/.test(code[i])) i++;
+                result += '<span class="token operator">' + escapeHtml(code.substring(start, i)) + '</span>';
                 continue;
             }
 
             // Punctuation
-            if (/[(),.[\]{}:;]/.test(escaped[i])) {
-                result += '<span class="token punctuation">' + escaped[i] + '</span>';
+            if (/[(),.[\]{}:;]/.test(code[i])) {
+                result += '<span class="token punctuation">' + escapeHtml(code[i]) + '</span>';
                 i++;
                 continue;
             }
 
-            result += escaped[i];
+            // Whitespace and anything else
+            result += escapeHtml(code[i]);
             i++;
         }
 
